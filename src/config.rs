@@ -1,1 +1,1 @@
-pub const DEFAULT_PORT: &str = "3000";
+pub const DEFAULT_PORT: u16 = 3000;

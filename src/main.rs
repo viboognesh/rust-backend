@@ -2,11 +2,12 @@ mod config;
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::Path,
-    routing::get,
+    extract::Json,
+    routing::post,
     Router,
 };
 use clap::Parser;
+use serde::Deserialize;
 use std::env;
 use tokio::net::TcpListener;
 use tracing::{debug, info, warn, Level};
@@ -21,11 +22,16 @@ struct Cli {
     log_level: Option<String>,
 }
 
-async fn hello_name(Path(name): Path<String>) -> String {
-    debug!("Entered hello_name function");
-    debug!("Received name input: {}", name);
+#[derive(Deserialize)]
+struct HelloRequest {
+    name: String,
+}
 
-    format!("Hello {}", name)
+async fn hello_name(Json(payload): Json<HelloRequest>) -> String {
+    debug!("Entered hello_name function");
+    debug!("Received name input: {}", payload.name);
+
+    format!("Hello {}", payload.name)
 }
 
 #[tokio::main]
@@ -37,9 +43,7 @@ async fn main() -> Result<()> {
             "debug" => Level::DEBUG,
             "info" => Level::INFO,
             "error" => Level::ERROR,
-            _ => {
-                Level::INFO
-            }
+            _ => Level::INFO,
         }
     } else if cli.debug {
         Level::DEBUG
@@ -69,7 +73,7 @@ async fn main() -> Result<()> {
     let address = format!("0.0.0.0:{}", port);
 
     let app = Router::new()
-        .route("/hello/{name}", get(hello_name));
+        .route("/hello", post(hello_name));
 
     let listener = TcpListener::bind(&address)
         .await

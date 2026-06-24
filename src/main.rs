@@ -3,12 +3,12 @@ mod config;
 use anyhow::{Context, Result};
 use axum::{
     extract::{Json, State},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use clap::Parser;
 use rusqlite::{params, Connection};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     env,
     sync::{Arc, Mutex},
@@ -33,6 +33,12 @@ struct AppState {
 
 #[derive(Deserialize)]
 struct HelloRequest {
+    name: String,
+}
+
+#[derive(Serialize)]
+struct NameRecord {
+    id: i64,
     name: String,
 }
 
@@ -63,6 +69,7 @@ async fn hello_name(
         }
     };
 
+
     if exists {
         format!("Hello {}, again", payload.name)
     } else {
@@ -77,6 +84,56 @@ async fn hello_name(
             }
         }
     }
+}
+
+async fn get_names(
+    State(state): State<AppState>,
+) -> Json<Vec<NameRecord>> {
+    debug!("Entered get_names function");
+
+    let conn = match state.db.lock() {
+        Ok(conn) => conn,
+        Err(err) => {
+            warn!("Failed to acquire database lock: {}", err);
+            return Json(Vec::new());
+        }
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT id, name FROM names ORDER BY id"
+    ) {
+        Ok(stmt) => stmt,
+        Err(err) => {
+            warn!("Failed to prepare query: {}", err);
+            return Json(Vec::new());
+        }
+    };
+
+    let rows = match stmt.query_map([], |row| {
+        Ok(NameRecord {
+            id: row.get(0)?,
+            name: row.get(1)?,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(err) => {
+            warn!("Failed to query names: {}", err);
+            return Json(Vec::new());
+        }
+    };
+
+    let mut names = Vec::new();
+
+    for row in rows {
+        match row {
+            Ok(record) => names.push(record),
+            Err(err) => {
+                warn!("Failed to read row: {}", err);
+            }
+        }
+    }
+
+    Json(names)
 }
 
 #[tokio::main]
@@ -135,6 +192,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/hello", post(hello_name))
+        .route("/names", get(get_names))
         .with_state(state);
 
     let listener = TcpListener::bind(&address)
